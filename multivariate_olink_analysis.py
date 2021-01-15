@@ -19,10 +19,37 @@ np.set_printoptions(suppress=True)
 DISPLAY_MAX_ROWS = 20  # number of max rows to print for a DataFrame
 pd.set_option('display.max_rows', DISPLAY_MAX_ROWS)
 
+# plot style
+plt.style.use('ggplot')
+
+# screeplot for PCA
+
+
+def screeplot(pca, standardised_values, set):
+    y = np.std(pca.transform(standardised_values), axis=0)**2
+    x = np.arange(len(y)) + 1
+    axis.plot(x, y, "o-")
+    axis.set_xticks(x)
+    axis.set_xticklabels(["Comp."+str(i) for i in x], rotation=60)
+    axis.set_ylabel("Variance")
+    axis.set_title("Scree Plot for "+set)
+
+# scatterplot for PCA
+
+
+def pca_scatter(pca, standardised_values, classifs, set):
+    foo = pca.transform(standardised_values)
+    bar = pd.DataFrame(zip(foo[:, 0], foo[:, 1], classifs), columns=["PC1", "PC2", "Class"])
+    sns.lmplot(x="PC1", y="PC2", data=bar, hue="Class", fit_reg=False)
+    ax = plt.gca()
+    ax.set_title(set)
+
+
 # %% PRELIMINARY STEPS
 
 # Olink data has been edited as follows:
 # NPX normalized data (per chemical) is used in this analysis
+# Control Data has been duplicated for each dataset with different sampleID
 # All red-filled cells are below LQL or above ULOQ have been replaced with 'NA'
 # (for descriptions see Olink's certificated of analysis)
 # Samples that didn't pass Olink's quality test (red numbers) and Olink's
@@ -31,6 +58,7 @@ pd.set_option('display.max_rows', DISPLAY_MAX_ROWS)
 
 # A file containing SampleID, Dataset, Day (on which sample has been taken),
 # Progress (of disease), and PatientID has been created manually
+
 
 # %% LOAD DATA
 data = pd.read_csv(
@@ -68,14 +96,14 @@ data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
 data.to_csv("C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit_complete.csv")
 
 data = data.drop("Sample", axis=1)
+data.columns = data.columns.str.strip()  # get rid of whitespace in first column
+
+# %% test
+print(np.sort(data["Day"].unique()))
 
 # %% Create basic plot
 
-plt.style.use('ggplot')
-
 # divide data in different data sets (will produce a plot for each)
-
-data.columns = data.columns.str.strip()  # get rid of whitespace in first column
 
 # setup pdf for saving plots
 plotpages = PdfPages(
@@ -117,5 +145,62 @@ for oneset in datasets_unique:
 
     # save plot
     plotpages.savefig(fig)
+
+plotpages.close()
+
+# %% Principal Component analysis
+
+datasets_unique = data["Dataset"].unique()
+proteinlist = [str(x) for x in proteins.tolist()]
+
+# setup pdf for saving plots
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_PCA.pdf")
+
+
+# split data by dataset
+for oneset in datasets_unique:
+    fig, axis = plt.subplots(figsize=(
+        10, 5))  # for 45 proteins
+    fig.tight_layout(pad=3)
+
+    data_oneset = data[data["Dataset"] == oneset]
+    only_concentration_data = data_oneset[proteinlist]
+    only_concentration_data = only_concentration_data.dropna(axis=1)
+    pcaproteins = only_concentration_data.columns.str.strip()
+    pcaproteinlist = [str(x) for x in pcaproteins.tolist()]
+
+    standardised_oneset = scale(only_concentration_data)
+    standardised_oneset = pd.DataFrame(
+        standardised_oneset, index=only_concentration_data.index, columns=only_concentration_data.columns)
+    print(standardised_oneset.apply(np.nanmean))
+    print(standardised_oneset.apply(np.nanstd))
+
+    pca = PCA().fit(standardised_oneset)
+    screeplot(pca, standardised_oneset, oneset)
+    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Progress"], oneset)
+
+    # save plot
+    plotpages.savefig(fig)
+    plotpages.savefig(fig2)
+
+    # correlate pricincipal components to variables
+    indices = np.arange(len(pcaproteinlist))
+    pcaproteinarray = np.array(pcaproteinlist)
+
+    # First Component
+    correlation_array = np.vstack((pcaproteinarray, pca.components_[0])).T
+    correlation_dataframe = pd.DataFrame(
+        data=correlation_array, index=indices, columns=["Protein", "Loadings"])
+    correlation_dataframe.sort_values(by="Loadings", ascending=False).to_csv(
+        "C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit_PCA_loadings.csv", mode='a', header=True)
+
+    # Second Component
+    correlation_array = np.vstack((pcaproteinarray, pca.components_[1])).T
+    correlation_dataframe = pd.DataFrame(
+        data=correlation_array, index=indices, columns=["Protein", "Loadings"])
+    correlation_dataframe.sort_values(by="Loadings", ascending=False).to_csv(
+        "C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit_PCA_loadings.csv", mode='a', header=True)
+
 
 plotpages.close()
