@@ -75,18 +75,31 @@ print(dataattributes.head())
 # %% Append sample attributes to the right sample ID  (find efficient solution)
 
 # Create empty dataframe to append
-additionaldata = pd.DataFrame(columns=["Sample", "Dataset", "Day", "Progress", "PatientID"])
+additionaldata = pd.DataFrame(
+    columns=["Sample", "Dataset", "Day", "Progress", "PatientID", "Phase"])
 
 # Build a dataframe out of matching rows from dataattributes for each row data
 for ind in data.index:
-    additionaldata = additionaldata.append(
-        dataattributes[dataattributes.Sample == data.Sample[ind]])
+    currentattribute = dataattributes[dataattributes.Sample == data.Sample[ind]]
+    phase = ""
+
+    if (currentattribute["Day"].item() <= 10):
+        phase = pd.Series(["Early"], name="Phase")
+    elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
+        phase = pd.Series(["Mid"], name="Phase")
+    elif (currentattribute["Day"].item() >= 90):
+        phase = pd.Series(["Late"], name="Phase")
+
+    currentattribute.reset_index(drop=True, inplace=True)
+    currentattribute = pd.concat([currentattribute, phase], axis=1)
+    additionaldata = additionaldata.append(currentattribute, ignore_index=True)
+
     if dataattributes[dataattributes.Sample == data.Sample[ind]].empty:
         print(data.Sample[ind])
 
 # Append additionaldata to data, in order to add attributes to the corresponding samples
 print("TAIL:\n", additionaldata.tail())
-
+print(additionaldata["Phase"].unique())
 additionaldata = additionaldata.reset_index(drop=True)
 
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
@@ -98,17 +111,11 @@ data.to_csv("C:/umea_immunology/experiments/corona/olink_data/formatted_data/202
 data = data.drop("Sample", axis=1)
 data.columns = data.columns.str.strip()  # get rid of whitespace in first column
 
-# %% test
-print(np.sort(data["Day"].unique()))
-
-# %% Create basic plot
-
-# divide data in different data sets (will produce a plot for each)
+# %% Create basic plots
 
 # setup pdf for saving plots
 plotpages = PdfPages(
     "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data.pdf")
-
 
 # divide up data by dataset (one figure per dataset)
 datasets_unique = data["Dataset"].unique()
@@ -119,7 +126,7 @@ for oneset in datasets_unique:
     patients = data_oneset.groupby("PatientID")
 
     patient_unique = data_oneset["Progress"].unique()
-    color_values = sns.color_palette("Set2", len(patient_unique))
+    color_values = sns.color_palette("colorblind", len(patient_unique))
     color_map = dict(zip(patient_unique, color_values))
 
     # begin figure
@@ -157,11 +164,10 @@ proteinlist = [str(x) for x in proteins.tolist()]
 plotpages = PdfPages(
     "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_PCA.pdf")
 
-
 # split data by dataset
 for oneset in datasets_unique:
     fig, axis = plt.subplots(figsize=(
-        10, 5))  # for 45 proteins
+        10, 5))
     fig.tight_layout(pad=3)
 
     data_oneset = data[data["Dataset"] == oneset]
@@ -196,11 +202,55 @@ for oneset in datasets_unique:
         "C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit_PCA_loadings.csv", mode='a', header=True)
 
     # Second Component
-    correlation_array = np.vstack((pcaproteinarray, pca.components_[1])).T
-    correlation_dataframe = pd.DataFrame(
-        data=correlation_array, index=indices, columns=["Protein", "Loadings"])
-    correlation_dataframe.sort_values(by="Loadings", ascending=False).to_csv(
+    correlation_array2 = np.vstack((pcaproteinarray, pca.components_[1])).T
+    correlation_dataframe2 = pd.DataFrame(
+        data=correlation_array2, index=indices, columns=["Protein", "Loadings"])
+    correlation_dataframe2.sort_values(by="Loadings", ascending=False).to_csv(
         "C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit_PCA_loadings.csv", mode='a', header=True)
 
+    # generate boxplots of the first three variables correlating with either component
+    # get most important variables from Loadings (check, if lowest AND highest values)
+
+    if len(correlation_dataframe[(correlation_dataframe["Loadings"].astype(float) >= 0.2) | (correlation_dataframe["Loadings"].astype(float) <= -0.2)]) >= 3:
+        chosen_corr1 = correlation_dataframe[(correlation_dataframe["Loadings"].astype(float) >= 0.2) |
+                                             (correlation_dataframe["Loadings"].astype(float) <= -0.2)].iloc[0: 3]
+        chosen_corr1 = chosen_corr1["Protein"].tolist()
+    elif len(correlation_dataframe[(correlation_dataframe["Loadings"].astype(float) >= 0.2) | (correlation_dataframe["Loadings"].astype(float) <= -0.2)]) == 0:
+        chosen_corr1 = ""
+    else:
+        chosen_corr1 = correlation_dataframe[(correlation_dataframe["Loadings"].astype(float) >= 0.2) |
+                                             (correlation_dataframe["Loadings"].astype(float) <= -0.2)]
+        chosen_corr1 = chosen_corr1["Protein"].tolist()
+
+    if len(correlation_dataframe2[(correlation_dataframe2["Loadings"].astype(float) >= 0.2) | (correlation_dataframe2["Loadings"].astype(float) <= -0.2)]) >= 3:
+        chosen_corr2 = correlation_dataframe2[(correlation_dataframe2["Loadings"].astype(float) >= 0.2) |
+                                              (correlation_dataframe2["Loadings"].astype(float) <= -0.2)].iloc[0: 3]
+        chosen_corr2 = chosen_corr2["Protein"].tolist()
+    elif len(correlation_dataframe2[(correlation_dataframe2["Loadings"] >= 0.2) | (correlation_dataframe2["Loadings"].astype(float) <= -0.2)]) == 0:
+        chosen_corr2 = ""
+    else:
+        chosen_corr2 = correlation_dataframe2[(correlation_dataframe2["Loadings"].astype(float) >= 0.2) |
+                                              (correlation_dataframe2["Loadings"].astype(float) <= -0.2)]
+        chosen_corr2 = chosen_corr2["Protein"].tolist()
+
+    # combine both lists
+    chosen_corr_total = chosen_corr1+chosen_corr2
+    chosen_corr_total = list(set(chosen_corr_total))  # no duplicates
+
+    fig3, axes = plt.subplots(len(chosen_corr_total), figsize=(
+        20, 30))
+    fig3.tight_layout(pad=3)
+    # start plotting per protein
+    for i in range(0, len(chosen_corr_total)):
+        sns.boxplot(y=chosen_corr_total[i], x="Phase",
+                    data=data_oneset, palette="colorblind", hue="Progress", ax=axes[i], order=["Early", "Mid", "Late"])
+        sns.stripplot(y=chosen_corr_total[i], x="Phase",
+                      data=data_oneset, palette="colorblind", hue="Progress", ax=axes[i], order=["Early", "Mid", "Late"], dodge=True)
+        axes[i].legend(loc="upper right", title="Progress")
+        axes[i].set_xlabel("Phase")
+        axes[i].set_ylabel("Normalized Protein Amount")
+        axes[i].set_title(proteins[i]+" amounts in "+oneset+" samples")
+
+    plotpages.savefig(fig3)
 
 plotpages.close()
