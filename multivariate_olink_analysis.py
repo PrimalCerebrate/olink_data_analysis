@@ -302,6 +302,10 @@ for oneset in datasets_unique:
     # Data QC
     # print(standardised_oneset.apply(np.nanmean))
     # print(standardised_oneset.apply(np.nanstd))
+    #count = np.isinf(standardised_oneset).values.sum()
+    #print("It contains " + str(count) + " infinite values")
+    #count = np.isnan(standardised_oneset).values.sum()
+    #print("It contains " + str(count) + " nan values")
 
     fig, axis = plt.subplots(figsize=(
         10, 5))
