@@ -77,6 +77,42 @@ def append_attributes(givendata, dataattributes):
 
     return(add_data)
 
+# Append age and sex to matching patientIDs (after append_attributes)
+
+
+def append_sexage(givendata, dataattributes):
+    # Create empty dataframe to append
+    add_data = pd.DataFrame(
+        columns=["PatientID", "Age", "Sex", "age_group"])
+
+    dataattributes["PatientID"] = dataattributes["PatientID"].astype("str")
+
+    for ind in givendata.index:
+        if dataattributes[dataattributes.PatientID == givendata.PatientID[ind]].empty:
+            print(givendata.PatientID[ind])
+            add_data = pd.concat([add_data, pd.DataFrame(
+                [[np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
+        else:
+            currentattribute = dataattributes[dataattributes.PatientID == givendata.PatientID[ind]]
+
+            agegroup = ""
+
+            if (currentattribute["Age"].item() <= 25):
+                agegroup = pd.Series(["Under_26_years"], name="age_group")
+            elif (currentattribute["Age"].item() > 25 and currentattribute["Age"].item() <= 50):
+                agegroup = pd.Series(["26-50_years"], name="age_group")
+            elif (currentattribute["Age"].item() > 50):
+                agegroup = pd.Series(["Over_50"], name="age_group")
+
+            currentattribute.reset_index(drop=True, inplace=True)
+            currentattribute["Sex"] = currentattribute["Sex"].item() + \
+                "_" + givendata.Progress[ind]
+            currentattribute = pd.concat([currentattribute, agegroup], axis=1)
+
+            add_data = add_data.append(currentattribute, ignore_index=True)
+
+    return(add_data)
+
 # Append attributes and exchange Progress variable with highIgA and highIgM from lists
 
 
@@ -155,45 +191,6 @@ def append_complete(givendata, dataattributes):
 
     return(add_data)
 
-# Append attributes and exchange Progress variable with highIgA and lowIgA list
-
-
-def append_highIgA(givendata, dataattributes, highiga):
-    # Create empty dataframe to append
-    add_data = pd.DataFrame(
-        columns=["Sample", "Dataset", "Day", "Progress", "PatientID", "Phase"])
-
-    for ind in givendata.index:
-        currentattribute = dataattributes[dataattributes.Sample == givendata.Sample[ind]]
-        phase = ""
-
-        if (currentattribute["Day"].item() <= 10):
-            phase = pd.Series(["Early"], name="Phase")
-        elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
-            phase = pd.Series(["Mid"], name="Phase")
-        elif (currentattribute["Day"].item() >= 90):
-            phase = pd.Series(["Late"], name="Phase")
-
-        currentattribute.reset_index(drop=True, inplace=True)
-
-        highiga.study_ID = highiga.study_ID.astype(str)
-
-        if (currentattribute["PatientID"].item() in highiga.values):
-            currentattribute["Progress"] = "High_late_IgA"
-        else:
-            currentattribute["Progress"] = "Low_late_IgA"
-
-        currentattribute = pd.concat([currentattribute, phase], axis=1)
-
-        if dataattributes[dataattributes.Sample == givendata.Sample[ind]].empty:
-            print(givendata.Sample[ind])
-            add_data = pd.concat([add_data, pd.DataFrame(
-                [[np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
-        else:
-            add_data = add_data.append(currentattribute, ignore_index=True)
-
-    return(add_data)
-
 # Append antibody levels
 
 
@@ -217,6 +214,7 @@ def append_antibodies(givendata, antibodydata):
             add_data = add_data.append(currentattribute.astype(float), ignore_index=True)
 
     return(add_data)
+
 
 # Plot protein amounts per dataset with day and progress categorical variables
 
@@ -290,7 +288,7 @@ def correlate_pc_loadings(indix, proteinarray, pca_values, protnumbers, filename
     return(chosen_corr)
 
 
-def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset):
+def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset, chosengroups):
     blackpal = ["black", "black", "black", "black", "black", "black", "black", "black"]
     fig, axes = plt.subplots(len(current_pc), figsize=(
         20, 5*len(current_pc)))
@@ -298,10 +296,10 @@ def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset):
     # start plotting per protein
     for j in range(0, len(current_pc)):
         sns.boxplot(y=current_pc[j], x="Phase",
-                    data=data_of_oneset, palette="colorblind", hue="Progress", ax=axes[j], order=["Early", "Mid", "Late"])
+                    data=data_of_oneset, palette="colorblind", hue=chosengroups, ax=axes[j], order=["Early", "Mid", "Late"])
         sns.stripplot(y=current_pc[j], x="Phase",
-                      data=data_of_oneset, hue="Progress", palette=blackpal, ax=axes[j], order=["Early", "Mid", "Late"], dodge=True)
-        axes[j].legend(loc="upper right", title="Progress")
+                      data=data_of_oneset, hue=chosengroups, palette=blackpal, ax=axes[j], order=["Early", "Mid", "Late"], dodge=True)
+        axes[j].legend(loc="upper right", title=chosengroups)
         axes[j].set_xlabel("Phase")
         axes[j].set_ylabel("Normalized Protein Amount")
         axes[j].set_title("For PC"+str(indix+1)+": "+current_pc[j] +
@@ -337,6 +335,9 @@ highIGA = pd.read_csv(
 highIGM = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/highIgM_olink.csv")
 
+sexage = pd.read_csv(
+    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/COVID_age_sex.csv")
+
 # save data columns (without Sample) for the plotting later
 proteins = data.drop("Sample", axis=1).columns.str.strip()
 
@@ -356,6 +357,17 @@ print(additionaldata["Phase"].unique())
 additionaldata = additionaldata.reset_index(drop=True)
 
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
+                 axis=1)
+
+# %% Append sex and age info to the right patient ID  (find efficient solution)
+
+additionaldata = append_sexage(data, sexage)
+
+# Append additionaldata to data, in order to add attributes to the corresponding samples
+print("TAIL:\n", additionaldata.tail())
+additionaldata = additionaldata.reset_index(drop=True)
+
+data = pd.concat([data, additionaldata.drop("PatientID", axis=1)],
                  axis=1)
 
 # %% Append complete attributes for all datasets together to the right sample ID  (find efficient solution)
@@ -489,7 +501,135 @@ for oneset in datasets_unique:
 
     for i in range(0, 2):
         current_corr = chosen_corr_total[i]
-        fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset)
+        fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset, "Progress")
+        plotpages.savefig(fig3)
+
+plotpages.close()
+
+# %% Principal Component analysis with Sex
+
+datasets_unique = data["Dataset"].unique()
+proteinlist = [str(x) for x in proteins.tolist()]
+
+# setup pdf for saving plots
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_PCA_sex.pdf")
+
+# open empty file for loadings (overwrite old)
+df = pd.DataFrame(list())
+df.to_csv("C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/20201969_Forsell_NPX_edit_PCA_loadings_sex.csv")
+
+# do analysis by dataset
+for oneset in datasets_unique:
+    data_oneset = data[data["Dataset"] == oneset]
+
+    only_concentration_data = data_oneset[proteinlist]
+    only_concentration_data = only_concentration_data.dropna(axis=1)
+    pcaproteins = only_concentration_data.columns.str.strip()
+    pcaproteinlist = [str(x) for x in pcaproteins.tolist()]
+
+    standardised_oneset = scale(only_concentration_data)
+    standardised_oneset = pd.DataFrame(
+        standardised_oneset, index=only_concentration_data.index, columns=only_concentration_data.columns)
+
+    # Data QC
+    # print(standardised_oneset.apply(np.nanmean))
+    # print(standardised_oneset.apply(np.nanstd))
+    # count = np.isinf(standardised_oneset).values.sum()
+    # print("It contains " + str(count) + " infinite values")
+    # count = np.isnan(standardised_oneset).values.sum()
+    # print("It contains " + str(count) + " nan values")
+
+    fig, axis = plt.subplots(figsize=(
+        10, 5))
+    fig.tight_layout(pad=3)
+
+    pca = PCA(svd_solver='arpack').fit(standardised_oneset)
+    screeplot(pca, standardised_oneset, oneset)
+    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Sex"], oneset)
+
+    # save plot
+    plotpages.savefig(fig)
+    plotpages.savefig(fig2)
+
+    # correlate pricincipal components to variables
+    protindices = np.arange(len(pcaproteinlist))
+    pcaproteinarray = np.array(pcaproteinlist)
+
+    filename = "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/20201969_Forsell_NPX_edit_PCA_loadings_sex.csv"
+    corr_pc1 = correlate_pc_loadings(0, pcaproteinarray, pca, protindices, filename)
+    corr_pc2 = correlate_pc_loadings(1, pcaproteinarray, pca, protindices, filename)
+
+    # combine both lists
+    chosen_corr_total = [corr_pc1, corr_pc2]
+
+    for i in range(0, 2):
+        current_corr = chosen_corr_total[i]
+        fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset, "Sex")
+        plotpages.savefig(fig3)
+
+plotpages.close()
+
+# %% Principal Component analysis with Age
+
+datasets_unique = data["Dataset"].unique()
+proteinlist = [str(x) for x in proteins.tolist()]
+
+# setup pdf for saving plots
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_PCA_age.pdf")
+
+# open empty file for loadings (overwrite old)
+df = pd.DataFrame(list())
+df.to_csv("C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/20201969_Forsell_NPX_edit_PCA_loadings_age.csv")
+
+# do analysis by dataset
+for oneset in datasets_unique:
+    data_oneset = data[data["Dataset"] == oneset]
+
+    only_concentration_data = data_oneset[proteinlist]
+    only_concentration_data = only_concentration_data.dropna(axis=1)
+    pcaproteins = only_concentration_data.columns.str.strip()
+    pcaproteinlist = [str(x) for x in pcaproteins.tolist()]
+
+    standardised_oneset = scale(only_concentration_data)
+    standardised_oneset = pd.DataFrame(
+        standardised_oneset, index=only_concentration_data.index, columns=only_concentration_data.columns)
+
+    # Data QC
+    # print(standardised_oneset.apply(np.nanmean))
+    # print(standardised_oneset.apply(np.nanstd))
+    # count = np.isinf(standardised_oneset).values.sum()
+    # print("It contains " + str(count) + " infinite values")
+    # count = np.isnan(standardised_oneset).values.sum()
+    # print("It contains " + str(count) + " nan values")
+
+    fig, axis = plt.subplots(figsize=(
+        10, 5))
+    fig.tight_layout(pad=3)
+
+    pca = PCA(svd_solver='arpack').fit(standardised_oneset)
+    screeplot(pca, standardised_oneset, oneset)
+    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["age_group"], oneset)
+
+    # save plot
+    plotpages.savefig(fig)
+    plotpages.savefig(fig2)
+
+    # correlate pricincipal components to variables
+    protindices = np.arange(len(pcaproteinlist))
+    pcaproteinarray = np.array(pcaproteinlist)
+
+    filename = "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/20201969_Forsell_NPX_edit_PCA_loadings_age.csv"
+    corr_pc1 = correlate_pc_loadings(0, pcaproteinarray, pca, protindices, filename)
+    corr_pc2 = correlate_pc_loadings(1, pcaproteinarray, pca, protindices, filename)
+
+    # combine both lists
+    chosen_corr_total = [corr_pc1, corr_pc2]
+
+    for i in range(0, 2):
+        current_corr = chosen_corr_total[i]
+        fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset, "age_group")
         plotpages.savefig(fig3)
 
 plotpages.close()
@@ -596,7 +736,7 @@ for oneset in datasets_unique:
 
         for i in range(0, 2):
             current_corr = chosen_corr_total[i]
-            fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset)
+            fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset, "Progress")
             plotpages.savefig(fig3)
 
 plotpages.close()
@@ -661,7 +801,7 @@ for oneset in datasets_unique:
 
     for i in range(0, 2):
         current_corr = chosen_corr_total[i]
-        fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset)
+        fig3 = plot_highvar_proteins(current_corr, i, data_oneset, oneset, "Progress")
         plotpages.savefig(fig3)
 
 plotpages.close()
