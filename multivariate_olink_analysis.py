@@ -805,3 +805,57 @@ for oneset in datasets_unique:
         plotpages.savefig(fig3)
 
 plotpages.close()
+
+# %% Correlation matrices of different time phases and groups based on data (sex, progress, age)
+
+datasets_unique = data["Dataset"].unique()
+proteinlist = [str(x) for x in proteins.tolist()]
+
+# setup pdf for saving plots
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_correlationmatrices.pdf")
+
+# do analysis by dataset
+for oneset in datasets_unique:
+    data_oneset = data[data["Dataset"] == oneset]
+    data_groups = data_oneset["Progress"].unique()
+
+    fig, axes = plt.subplots(len(data_groups), 3, figsize=(
+        25, 7*len(data_groups)))
+    fig.tight_layout(pad=3)
+    figrow = -1
+
+    for onegroup in data_groups:
+        figcol = -1
+        figrow = figrow+1
+        data_onegroup = data_oneset[data_oneset["Progress"] == onegroup]
+        data_phases = data_onegroup["Phase"].unique()
+        sorted_data_phases = []
+        if "Early" in data_phases:
+            sorted_data_phases += ["Early"]
+        if "Mid" in data_phases:
+            sorted_data_phases += ["Mid"]
+        if "Late" in data_phases:
+            sorted_data_phases += ["Late"]
+
+        for onephase in sorted_data_phases:
+            figcol = figcol+1
+            data_onephase = data_onegroup[data_onegroup["Phase"] == onephase]
+
+            only_concentration_data = data_onephase[proteinlist]
+            only_concentration_data = only_concentration_data.dropna(axis=1)
+            pcaproteins = only_concentration_data.columns.str.strip()
+            pcaproteinlist = [str(x) for x in pcaproteins.tolist()]
+            corrmat = only_concentration_data.corr()
+
+            # start plotting
+            sns.heatmap(corrmat, vmin=-1, vmax=1, center=0,
+                        cmap=sns.diverging_palette(20, 220, n=100), square=True, ax=axes[figrow, figcol], xticklabels=True, yticklabels=True)
+            axes[figrow, figcol].set_title(
+                "Correlation Matrix of "+oneset+" "+onegroup+" "+onephase)
+            # axes[figrow, figcol].set_xticklabels(
+            # axes[figrow, figcol].get_xticklabels(), rotation = 45, horizontalalignment = 'right')
+
+    plotpages.savefig(fig)
+
+plotpages.close()
