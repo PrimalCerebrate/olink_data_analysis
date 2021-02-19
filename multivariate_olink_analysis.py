@@ -144,6 +144,8 @@ def append_highantibodies(givendata, dataattributes, highiga, highigm):
             currentattribute["Progress"] = "High_IgM"
         elif (currentattribute["PatientID"].item() in highigm.values and currentattribute["PatientID"].item() in highiga.values):
             currentattribute["Progress"] = "High_IgA_and_IgM"
+        else:
+            currentattribute["Progress"] = "Low_IgA_and_IgM"
 
         currentattribute = pd.concat([currentattribute, phase], axis=1)
 
@@ -899,9 +901,15 @@ for oneset in datasets_unique:
 plotpages.close()
 
 # %% Correlation matrices of group vs group (progress) in different time phases
+antibody_switch = 0
+groupies = "Sex"
 
 datasets_unique = data["Dataset"].unique()
-proteinlist = [str(x) for x in proteins.tolist()]
+
+if (antibody_switch == 1):
+    proteinlist = [str(x) for x in antibodproteins.tolist()] + ["IgG", "IgA", "IgM"]
+else:
+    proteinlist = [str(x) for x in proteins.tolist()]
 
 # setup pdf for saving plots
 plotpages = PdfPages(
@@ -922,7 +930,7 @@ for oneset in datasets_unique:
     if "Late" in data_phases:
         sorted_data_phases += ["Late"]
 
-    fig, axes = plt.subplots(len(sorted_data_phases), figsize=(20, 3*len(sorted_data_phases)))
+    fig, axes = plt.subplots(len(sorted_data_phases), figsize=(12, 4*len(sorted_data_phases)))
     fig.tight_layout(pad=3)
 
     figcol = -1
@@ -931,7 +939,8 @@ for oneset in datasets_unique:
         figcol = figcol+1
 
         data_onephase = data_oneset[data_oneset["Phase"] == onephase]
-        data_groups = data_onephase["Progress"].unique()
+        data_groups = data_onephase[groupies].unique()
+        data_groups = [x for x in data_groups if str(x) != 'nan']
 
         data_grouplist = list(itertools.combinations(data_groups, r=2))
 
@@ -940,16 +949,22 @@ for oneset in datasets_unique:
 
         for onegroup in data_grouplist:
 
-            data_onegroupA = data_onephase[data_onephase["Progress"] == onegroup[0]]
-            data_onegroupB = data_onephase[data_onephase["Progress"] == onegroup[1]]
+            data_onegroupA = data_onephase[data_onephase[groupies] == onegroup[0]]
+            data_onegroupB = data_onephase[data_onephase[groupies] == onegroup[1]]
 
             only_concentration_dataA = data_onegroupA[proteinlist]
             only_concentration_dataB = data_onegroupB[proteinlist]
 
-            only_concentration_dataA = only_concentration_dataA.dropna(
-                axis=1).reset_index(drop=True)
-            only_concentration_dataB = only_concentration_dataB.dropna(
-                axis=1).reset_index(drop=True)
+            if (antibody_switch == 1):
+                only_concentration_dataA = only_concentration_dataA.dropna(
+                    axis=0).reset_index(drop=True)
+                only_concentration_dataB = only_concentration_dataB.dropna(
+                    axis=0).reset_index(drop=True)
+            else:
+                only_concentration_dataA = only_concentration_dataA.dropna(
+                    axis=1).reset_index(drop=True)
+                only_concentration_dataB = only_concentration_dataB.dropna(
+                    axis=1).reset_index(drop=True)
 
             matchingcols = list(set(only_concentration_dataA) & set(only_concentration_dataB))
             only_concentration_dataA = only_concentration_dataA[matchingcols]
@@ -960,15 +975,16 @@ for oneset in datasets_unique:
             all_groups_corr = all_groups_corr.append(corrmat)
 
         # start plotting
-        sns.heatmap(all_groups_corr, vmin=-1, vmax=1, center=0,
-                    cmap=sns.diverging_palette(20, 220, n=100), square=True, ax=axes[figcol], xticklabels=True, yticklabels=True)
-        axes[figcol].set_title(
-            "Correlation Matrix of "+oneset+" "+onephase)
-        axes[figcol].tick_params('y', labelrotation=0)
-        axes[figcol].tick_params('x', top=True, bottom=False,
-                                 labeltop=True, labelbottom=False)
-        plt.setp(axes[figcol].get_xticklabels(), rotation=40, ha="left",
-                 rotation_mode="anchor")
+        if (not all_groups_corr.empty):
+            sns.heatmap(all_groups_corr, vmin=-1, vmax=1, center=0,
+                        cmap=sns.diverging_palette(20, 220, n=100), square=True, ax=axes[figcol], xticklabels=True, yticklabels=True)
+            axes[figcol].set_title(
+                "Correlation Matrix of "+oneset+" "+onephase)
+            axes[figcol].tick_params('y', labelrotation=0)
+            axes[figcol].tick_params('x', top=True, bottom=False,
+                                     labeltop=True, labelbottom=False)
+            plt.setp(axes[figcol].get_xticklabels(), rotation=40, ha="left",
+                     rotation_mode="anchor")
 
     plotpages.savefig(fig)
 
