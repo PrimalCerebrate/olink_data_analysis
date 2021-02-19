@@ -2,6 +2,7 @@
 from pydoc import help
 import pandas as pd
 import numpy as np
+import itertools
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import seaborn as sns
@@ -216,6 +217,42 @@ def append_antibodies(givendata, antibodydata):
     return(add_data)
 
 
+def append_stomachache(givendata, dataattributes, stomachache):
+    # Create empty dataframe to append
+    add_data = pd.DataFrame(
+        columns=["Sample", "Dataset", "Day", "Progress", "PatientID", "Phase"])
+
+    for ind in givendata.index:
+        currentattribute = dataattributes[dataattributes.Sample == givendata.Sample[ind]]
+        phase = ""
+
+        if (currentattribute["Day"].item() <= 10):
+            phase = pd.Series(["Early"], name="Phase")
+        elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
+            phase = pd.Series(["Mid"], name="Phase")
+        elif (currentattribute["Day"].item() >= 90):
+            phase = pd.Series(["Late"], name="Phase")
+
+        currentattribute.reset_index(drop=True, inplace=True)
+
+        stomachache.StudyID = stomachache.StudyID.astype(str)
+
+        if (currentattribute["PatientID"].item() in stomachache.values):
+            currentattribute["Progress"] = "Stomach_Ache"
+        else:
+            currentattribute["Progress"] = "No_Stomach_Ache"
+
+        currentattribute = pd.concat([currentattribute, phase], axis=1)
+
+        if dataattributes[dataattributes.Sample == givendata.Sample[ind]].empty:
+            print(givendata.Sample[ind])
+            add_data = pd.concat([add_data, pd.DataFrame(
+                [[np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
+        else:
+            add_data = add_data.append(currentattribute, ignore_index=True)
+
+    return(add_data)
+
 # Plot protein amounts per dataset with day and progress categorical variables
 
 
@@ -338,6 +375,9 @@ highIGM = pd.read_csv(
 sexage = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/COVID_age_sex.csv")
 
+stomachache_list = pd.read_csv(
+    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/olink_stomach_ache.csv")
+
 # save data columns (without Sample) for the plotting later
 proteins = data.drop("Sample", axis=1).columns.str.strip()
 
@@ -359,7 +399,7 @@ additionaldata = additionaldata.reset_index(drop=True)
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
                  axis=1)
 
-# %% Append sex and age info to the right patient ID  (find efficient solution)
+# %% Append sex and age info to the right patient ID  (find efficient solution) after attributes
 
 additionaldata = append_sexage(data, sexage)
 
@@ -404,9 +444,9 @@ additionaldata = additionaldata.reset_index(drop=True)
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
                  axis=1)
 
-# %% Append sample attributes to the right sample ID and group right late high IgA or low IgA
+# %% Append sample attributes to the right sample ID and group stomach ache list (find efficient solution)
 
-additionaldata = append_highIgA(data, attributes, highIGA)
+additionaldata = append_stomachache(data, attributes, stomachache_list)
 
 # Append additionaldata to data, in order to add attributes to the corresponding samples
 print("TAIL:\n", additionaldata.tail())
@@ -415,7 +455,6 @@ additionaldata = additionaldata.reset_index(drop=True)
 
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
                  axis=1)
-
 
 # %% Save complete data to new csv file
 
@@ -806,7 +845,7 @@ for oneset in datasets_unique:
 
 plotpages.close()
 
-# %% Correlation matrices of different time phases and groups based on data (sex, progress, age)
+# %% Correlation matrices of different time phases and groups based on progress
 
 datasets_unique = data["Dataset"].unique()
 proteinlist = [str(x) for x in proteins.tolist()]
@@ -844,8 +883,7 @@ for oneset in datasets_unique:
 
             only_concentration_data = data_onephase[proteinlist]
             only_concentration_data = only_concentration_data.dropna(axis=1)
-            pcaproteins = only_concentration_data.columns.str.strip()
-            pcaproteinlist = [str(x) for x in pcaproteins.tolist()]
+
             corrmat = only_concentration_data.corr()
 
             # start plotting
@@ -855,6 +893,82 @@ for oneset in datasets_unique:
                 "Correlation Matrix of "+oneset+" "+onegroup+" "+onephase)
             # axes[figrow, figcol].set_xticklabels(
             # axes[figrow, figcol].get_xticklabels(), rotation = 45, horizontalalignment = 'right')
+
+    plotpages.savefig(fig)
+
+plotpages.close()
+
+# %% Correlation matrices of group vs group (progress) in different time phases
+
+datasets_unique = data["Dataset"].unique()
+proteinlist = [str(x) for x in proteins.tolist()]
+
+# setup pdf for saving plots
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_correlationmatrices_comparegroups.pdf")
+
+# do analysis by dataset
+for oneset in datasets_unique:
+    data_oneset = data[data["Dataset"] == oneset]
+
+    figrow = -1
+
+    data_phases = data_oneset["Phase"].unique()
+    sorted_data_phases = []
+    if "Early" in data_phases:
+        sorted_data_phases += ["Early"]
+    if "Mid" in data_phases:
+        sorted_data_phases += ["Mid"]
+    if "Late" in data_phases:
+        sorted_data_phases += ["Late"]
+
+    fig, axes = plt.subplots(len(sorted_data_phases), figsize=(20, 3*len(sorted_data_phases)))
+    fig.tight_layout(pad=3)
+
+    figcol = -1
+
+    for onephase in sorted_data_phases:
+        figcol = figcol+1
+
+        data_onephase = data_oneset[data_oneset["Phase"] == onephase]
+        data_groups = data_onephase["Progress"].unique()
+
+        data_grouplist = list(itertools.combinations(data_groups, r=2))
+
+        all_groups_corr = pd.DataFrame(
+            columns=proteinlist)
+
+        for onegroup in data_grouplist:
+
+            data_onegroupA = data_onephase[data_onephase["Progress"] == onegroup[0]]
+            data_onegroupB = data_onephase[data_onephase["Progress"] == onegroup[1]]
+
+            only_concentration_dataA = data_onegroupA[proteinlist]
+            only_concentration_dataB = data_onegroupB[proteinlist]
+
+            only_concentration_dataA = only_concentration_dataA.dropna(
+                axis=1).reset_index(drop=True)
+            only_concentration_dataB = only_concentration_dataB.dropna(
+                axis=1).reset_index(drop=True)
+
+            matchingcols = list(set(only_concentration_dataA) & set(only_concentration_dataB))
+            only_concentration_dataA = only_concentration_dataA[matchingcols]
+            only_concentration_dataB = only_concentration_dataB[matchingcols]
+
+            corrmat = only_concentration_dataA.corrwith(only_concentration_dataB, axis=0)
+            corrmat = pd.Series(corrmat, name=onegroup[0]+" vs "+onegroup[1])
+            all_groups_corr = all_groups_corr.append(corrmat)
+
+        # start plotting
+        sns.heatmap(all_groups_corr, vmin=-1, vmax=1, center=0,
+                    cmap=sns.diverging_palette(20, 220, n=100), square=True, ax=axes[figcol], xticklabels=True, yticklabels=True)
+        axes[figcol].set_title(
+            "Correlation Matrix of "+oneset+" "+onephase)
+        axes[figcol].tick_params('y', labelrotation=0)
+        axes[figcol].tick_params('x', top=True, bottom=False,
+                                 labeltop=True, labelbottom=False)
+        plt.setp(axes[figcol].get_xticklabels(), rotation=40, ha="left",
+                 rotation_mode="anchor")
 
     plotpages.savefig(fig)
 
