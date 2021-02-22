@@ -117,7 +117,7 @@ def append_sexage(givendata, dataattributes):
 # Append attributes and exchange Progress variable with highIgA and highIgM from lists
 
 
-def append_highantibodies(givendata, dataattributes, highiga, highigm):
+def append_highantibodiesIgA(givendata, dataattributes, highiga):
     # Create empty dataframe to append
     add_data = pd.DataFrame(
         columns=["Sample", "Dataset", "Day", "Progress", "PatientID", "Phase"])
@@ -136,16 +136,12 @@ def append_highantibodies(givendata, dataattributes, highiga, highigm):
         currentattribute.reset_index(drop=True, inplace=True)
 
         highiga.study_ID = highiga.study_ID.astype(str)
-        highigm.study_ID = highigm.study_ID.astype(str)
+        #highigm.study_ID = highigm.study_ID.astype(str)
 
-        if (currentattribute["PatientID"].item() in highiga.values and not currentattribute["PatientID"].item() in highigm.values):
-            currentattribute["Progress"] = "High_IgA"
-        elif (currentattribute["PatientID"].item() in highigm.values and not currentattribute["PatientID"].item() in highiga.values):
-            currentattribute["Progress"] = "High_IgM"
-        elif (currentattribute["PatientID"].item() in highigm.values and currentattribute["PatientID"].item() in highiga.values):
-            currentattribute["Progress"] = "High_IgA_and_IgM"
+        if (currentattribute["PatientID"].item() in highiga.values):
+            currentattribute["Progress"] = "Late_High_IgA"
         else:
-            currentattribute["Progress"] = "Low_IgA_and_IgM"
+            currentattribute["Progress"] = "Late_Low_IgA"
 
         currentattribute = pd.concat([currentattribute, phase], axis=1)
 
@@ -200,7 +196,7 @@ def append_complete(givendata, dataattributes):
 def append_antibodies(givendata, antibodydata):
     # Create empty dataframe to append
     add_data = pd.DataFrame(
-        columns=["Sample", "IgG", "IgA", "IgM"])
+        columns=["Sample", "IgA"])
 
     antibodydata.Sample = antibodydata.Sample.astype(str)
 
@@ -212,7 +208,7 @@ def append_antibodies(givendata, antibodydata):
         if antibodydata[antibodydata.Sample == givendata.Sample[ind]].empty:
             print(givendata.Sample[ind])
             add_data = pd.concat([add_data, pd.DataFrame(
-                [[np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
+                [[np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
         else:
             add_data = add_data.append(currentattribute.astype(float), ignore_index=True)
 
@@ -434,9 +430,9 @@ additionaldata = additionaldata.reset_index(drop=True)
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
                  axis=1)
 
-# %% Append sample attributes to the right sample ID and group right high IgA or IgM (find efficient solution)
+# %% Append sample attributes to the right sample ID and group right high IgA (find efficient solution)
 
-additionaldata = append_highantibodies(data, attributes, highIGA, highIGM)
+additionaldata = append_highantibodiesIgA(data, attributes, highIGA)
 
 # Append additionaldata to data, in order to add attributes to the corresponding samples
 print("TAIL:\n", additionaldata.tail())
@@ -723,7 +719,7 @@ plotpages.close()
 
 datasets_unique = data["Dataset"].unique()
 
-proteinlist = [str(x) for x in antibodproteins.tolist()] + ["IgG", "IgA", "IgM"]
+proteinlist = [str(x) for x in antibodproteins.tolist()] + ["IgA"]
 
 # setup pdf for saving plots
 plotpages = PdfPages(
@@ -901,13 +897,13 @@ for oneset in datasets_unique:
 plotpages.close()
 
 # %% Correlation matrices of group vs group (progress) in different time phases
-antibody_switch = 0
-groupies = "Sex"
+antibody_switch = 1
+groupies = "Progress"
 
 datasets_unique = data["Dataset"].unique()
 
 if (antibody_switch == 1):
-    proteinlist = [str(x) for x in antibodproteins.tolist()] + ["IgG", "IgA", "IgM"]
+    proteinlist = [str(x) for x in antibodproteins.tolist()] + ["IgA"]
 else:
     proteinlist = [str(x) for x in proteins.tolist()]
 
@@ -975,7 +971,7 @@ for oneset in datasets_unique:
             all_groups_corr = all_groups_corr.append(corrmat)
 
         # start plotting
-        if (not all_groups_corr.empty):
+        if (not all_groups_corr.empty and not corrmat.dropna(axis=0).empty):
             sns.heatmap(all_groups_corr, vmin=-1, vmax=1, center=0,
                         cmap=sns.diverging_palette(20, 220, n=100), square=True, ax=axes[figcol], xticklabels=True, yticklabels=True)
             axes[figcol].set_title(
