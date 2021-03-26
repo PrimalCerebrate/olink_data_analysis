@@ -16,6 +16,8 @@ from IPython.display import display, HTML
 # %matplotlib inline
 
 np.set_printoptions(suppress=True)
+sns.set_context("notebook", rc={"font.size": 30, "axes.titlesize": 30,
+                                "axes.labelsize": 30, "xtick.labelsize": 20, "ytick.labelsize": 20})
 
 DISPLAY_MAX_ROWS = 20  # number of max rows to print for a DataFrame
 pd.set_option('display.max_rows', DISPLAY_MAX_ROWS)
@@ -40,12 +42,34 @@ def screeplot(pca, standardised_values, set):
 # scatterplot for PCA
 
 
-def pca_scatter(pca, standardised_values, classifs, set):
+def pca_scatter(pca, standardised_values, classifs, set, phases):
     foo = pca.transform(standardised_values)
-    bar = pd.DataFrame(zip(foo[:, 0], foo[:, 1], classifs), columns=["PC1", "PC2", "Class"])
-    sns.lmplot(x="PC1", y="PC2", data=bar, hue="Class", fit_reg=False, palette="colorblind")
-    ax = plt.gca()
-    ax.set_title(set)
+    bar = pd.DataFrame(zip(foo[:, 0], foo[:, 1], classifs, phases),
+                       columns=["PC1", "PC2", "Group", "Phase"])
+    lm = sns.lmplot(x="PC1", y="PC2", data=bar, col="Phase", hue="Group", palette="Dark2",
+                    fit_reg=False, col_order=["Acute", "Convalescent", "Chronic"], )
+    lm.set_titles(col_template="{col_name}"+" Phase")
+    lm.fig.suptitle("PCA of "+set)
+    lm.fig.subplots_adjust(top=0.9)
+    plt.gca()
+    #axes.legend(loc="upper right", title="Group")
+    # axes.set_title(set)
+
+# lineplot for IgX levels
+
+
+def antiline(data, antibody, set):
+    fig, axes = plt.subplots(2, figsize=(
+        10, 7))
+    fig.tight_layout(pad=3)
+    sns.lineplot(data=data, x="Day", y=antibody, units="PatientID",
+                 hue="Progress", palette="Dark2", estimator=None, lw=1, ax=axes[0])
+    sns.boxplot(y=antibody, x="Phase", data=data, palette="Dark2",
+                hue="Progress", ax=axes[1], order=["Acute", "Convalescent", "Chronic"])
+    #axes = plt.gca()
+    axes[1].legend(loc="upper right", title="Group", fontsize=20)
+    axes[0].set_title(set+" "+antibody)
+    axes[1].set_title(set+" "+antibody)
 
 # Build a dataframe out of matching rows from dataattributes for each row data
 
@@ -60,11 +84,11 @@ def append_attributes(givendata, dataattributes):
         phase = ""
 
         if (currentattribute["Day"].item() <= 10):
-            phase = pd.Series(["Early"], name="Phase")
+            phase = pd.Series(["Acute"], name="Phase")
         elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
-            phase = pd.Series(["Mid"], name="Phase")
+            phase = pd.Series(["Convalescent"], name="Phase")
         elif (currentattribute["Day"].item() >= 90):
-            phase = pd.Series(["Late"], name="Phase")
+            phase = pd.Series(["Chronic"], name="Phase")
 
         currentattribute.reset_index(drop=True, inplace=True)
         currentattribute = pd.concat([currentattribute, phase], axis=1)
@@ -127,11 +151,11 @@ def append_highantibodiesIgA(givendata, dataattributes, highiga):
         phase = ""
 
         if (currentattribute["Day"].item() <= 10):
-            phase = pd.Series(["Early"], name="Phase")
+            phase = pd.Series(["Acute"], name="Phase")
         elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
-            phase = pd.Series(["Mid"], name="Phase")
+            phase = pd.Series(["Convalescent"], name="Phase")
         elif (currentattribute["Day"].item() >= 90):
-            phase = pd.Series(["Late"], name="Phase")
+            phase = pd.Series(["Chronic"], name="Phase")
 
         currentattribute.reset_index(drop=True, inplace=True)
 
@@ -139,9 +163,9 @@ def append_highantibodiesIgA(givendata, dataattributes, highiga):
         #highigm.study_ID = highigm.study_ID.astype(str)
 
         if (currentattribute["PatientID"].item() in highiga.values):
-            currentattribute["Progress"] = "Late_High_IgA"
+            currentattribute["Progress"] = "Chronic_High_IgA"
         else:
-            currentattribute["Progress"] = "Late_Low_IgA"
+            currentattribute["Progress"] = "Chronic_Low_IgA"
 
         currentattribute = pd.concat([currentattribute, phase], axis=1)
 
@@ -167,11 +191,11 @@ def append_complete(givendata, dataattributes):
         phase = ""
 
         if (currentattribute["Day"].item() <= 10):
-            phase = pd.Series(["Early"], name="Phase")
+            phase = pd.Series(["Acute"], name="Phase")
         elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
-            phase = pd.Series(["Mid"], name="Phase")
+            phase = pd.Series(["Convalescent"], name="Phase")
         elif (currentattribute["Day"].item() >= 90):
-            phase = pd.Series(["Late"], name="Phase")
+            phase = pd.Series(["Chronic"], name="Phase")
 
         currentattribute.reset_index(drop=True, inplace=True)
 
@@ -196,7 +220,7 @@ def append_complete(givendata, dataattributes):
 def append_antibodies(givendata, antibodydata):
     # Create empty dataframe to append
     add_data = pd.DataFrame(
-        columns=["Sample", "IgA"])
+        columns=["Sample", "IgG", "IgA", "IgM"])
 
     antibodydata.Sample = antibodydata.Sample.astype(str)
 
@@ -208,7 +232,7 @@ def append_antibodies(givendata, antibodydata):
         if antibodydata[antibodydata.Sample == givendata.Sample[ind]].empty:
             print(givendata.Sample[ind])
             add_data = pd.concat([add_data, pd.DataFrame(
-                [[np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
+                [[np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
         else:
             add_data = add_data.append(currentattribute.astype(float), ignore_index=True)
 
@@ -225,11 +249,11 @@ def append_stomachache(givendata, dataattributes, stomachache):
         phase = ""
 
         if (currentattribute["Day"].item() <= 10):
-            phase = pd.Series(["Early"], name="Phase")
+            phase = pd.Series(["Acute"], name="Phase")
         elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
-            phase = pd.Series(["Mid"], name="Phase")
+            phase = pd.Series(["Convalescent"], name="Phase")
         elif (currentattribute["Day"].item() >= 90):
-            phase = pd.Series(["Late"], name="Phase")
+            phase = pd.Series(["Chronic"], name="Phase")
 
         currentattribute.reset_index(drop=True, inplace=True)
 
@@ -331,9 +355,9 @@ def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset, chosengr
     # start plotting per protein
     for j in range(0, len(current_pc)):
         sns.boxplot(y=current_pc[j], x="Phase",
-                    data=data_of_oneset, palette="colorblind", hue=chosengroups, ax=axes[j], order=["Early", "Mid", "Late"])
+                    data=data_of_oneset, palette="Dark2", hue=chosengroups, ax=axes[j], order=["Acute", "Convalescent", "Chronic"])
         sns.stripplot(y=current_pc[j], x="Phase",
-                      data=data_of_oneset, hue=chosengroups, palette=blackpal, ax=axes[j], order=["Early", "Mid", "Late"], dodge=True)
+                      data=data_of_oneset, hue=chosengroups, palette=blackpal, ax=axes[j], order=["Acute", "Convalescent", "Chronic"], dodge=True)
         axes[j].legend(loc="upper right", title=chosengroups)
         axes[j].set_xlabel("Phase")
         axes[j].set_ylabel("Normalized Protein Amount")
@@ -376,7 +400,7 @@ sexage = pd.read_csv(
 stomachache_list = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/olink_stomach_ache.csv")
 
-# save data columns (without Sample) for the plotting later
+# save data columns (without Sample) for the plotting Chronicr
 proteins = data.drop("Sample", axis=1).columns.str.strip()
 
 antibodproteins = data.dropna(axis=1).drop(
@@ -479,6 +503,29 @@ for oneset in datasets_unique:
 
 plotpages.close()
 
+# %% Plot antibody levels
+
+datasets_unique = data["Dataset"].unique()
+antibodylist = ["IgA", "IgM", "IgG"]
+
+# setup pdf for saving plots
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_antibody_levels.pdf")
+
+# do analysis by dataset
+for oneset in datasets_unique:
+    data_oneset = data[data["Dataset"] == oneset]
+
+    for onebody in antibodylist:
+        data_onebody = data_oneset[["PatientID", "Day", "Progress", "Phase", onebody]]
+        data_onebody = data_onebody.dropna(axis=0)
+        if (not data_onebody[onebody].empty):
+            fig2 = antiline(data_onebody, onebody, oneset)
+            # save plot
+            plotpages.savefig(fig2)
+
+plotpages.close()
+
 # %% Principal Component analysis
 
 datasets_unique = data["Dataset"].unique()
@@ -519,7 +566,9 @@ for oneset in datasets_unique:
 
     pca = PCA(svd_solver='arpack').fit(standardised_oneset)
     screeplot(pca, standardised_oneset, oneset)
-    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Progress"], oneset)
+
+    fig2 = pca_scatter(pca, standardised_oneset,
+                       data_oneset["Progress"], oneset, data_oneset["Phase"])
 
     # save plot
     plotpages.savefig(fig)
@@ -583,7 +632,7 @@ for oneset in datasets_unique:
 
     pca = PCA(svd_solver='arpack').fit(standardised_oneset)
     screeplot(pca, standardised_oneset, oneset)
-    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Sex"], oneset)
+    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Sex"], oneset, data_oneset["Phase"])
 
     # save plot
     plotpages.savefig(fig)
@@ -647,7 +696,8 @@ for oneset in datasets_unique:
 
     pca = PCA(svd_solver='arpack').fit(standardised_oneset)
     screeplot(pca, standardised_oneset, oneset)
-    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["age_group"], oneset)
+    fig2 = pca_scatter(pca, standardised_oneset,
+                       data_oneset["age_group"], oneset, data_oneset["Phase"])
 
     # save plot
     plotpages.savefig(fig)
@@ -754,7 +804,8 @@ for oneset in datasets_unique:
 
         pca = PCA(svd_solver='arpack').fit(standardised_oneset)
         screeplot(pca, standardised_oneset, oneset)
-        fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Progress"], oneset)
+        fig2 = pca_scatter(pca, standardised_oneset,
+                           data_oneset["Progress"], oneset, data_oneset["Phase"])
 
         # save plot
         plotpages.savefig(fig)
@@ -819,7 +870,8 @@ for oneset in datasets_unique:
 
     pca = PCA(svd_solver='arpack').fit(standardised_oneset)
     screeplot(pca, standardised_oneset, oneset)
-    fig2 = pca_scatter(pca, standardised_oneset, data_oneset["Progress"], oneset)
+    fig2 = pca_scatter(pca, standardised_oneset,
+                       data_oneset["Progress"], oneset, data_oneset["Phase"])
 
     # save plot
     plotpages.savefig(fig)
@@ -868,12 +920,12 @@ for oneset in datasets_unique:
         data_onegroup = data_oneset[data_oneset["Progress"] == onegroup]
         data_phases = data_onegroup["Phase"].unique()
         sorted_data_phases = []
-        if "Early" in data_phases:
-            sorted_data_phases += ["Early"]
-        if "Mid" in data_phases:
-            sorted_data_phases += ["Mid"]
-        if "Late" in data_phases:
-            sorted_data_phases += ["Late"]
+        if "Acute" in data_phases:
+            sorted_data_phases += ["Acute"]
+        if "Convalescent" in data_phases:
+            sorted_data_phases += ["Convalescent"]
+        if "Chronic" in data_phases:
+            sorted_data_phases += ["Chronic"]
 
         for onephase in sorted_data_phases:
             figcol = figcol+1
@@ -919,12 +971,12 @@ for oneset in datasets_unique:
 
     data_phases = data_oneset["Phase"].unique()
     sorted_data_phases = []
-    if "Early" in data_phases:
-        sorted_data_phases += ["Early"]
-    if "Mid" in data_phases:
-        sorted_data_phases += ["Mid"]
-    if "Late" in data_phases:
-        sorted_data_phases += ["Late"]
+    if "Acute" in data_phases:
+        sorted_data_phases += ["Acute"]
+    if "Convalescent" in data_phases:
+        sorted_data_phases += ["Convalescent"]
+    if "Chronic" in data_phases:
+        sorted_data_phases += ["Chronic"]
 
     fig, axes = plt.subplots(len(sorted_data_phases), figsize=(12, 4*len(sorted_data_phases)))
     fig.tight_layout(pad=3)
