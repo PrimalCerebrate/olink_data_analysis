@@ -1,5 +1,6 @@
 # %% can type in the python console `help(name of function)` to get the documentation
 from pydoc import help
+import plotnine as pn
 import pandas as pd
 import numpy as np
 import itertools
@@ -16,14 +17,18 @@ from IPython.display import display, HTML
 # %matplotlib inline
 
 np.set_printoptions(suppress=True)
-sns.set_context("notebook", rc={"font.size": 30, "axes.titlesize": 30,
-                                "axes.labelsize": 30, "xtick.labelsize": 20, "ytick.labelsize": 20})
+# sns.set_context("notebook", rc={"font.size": 30, "axes.titlesize": 30, axes.labelsize": 30, "xtick.labelsize": 20, "ytick.labelsize": 20})
 
 DISPLAY_MAX_ROWS = 20  # number of max rows to print for a DataFrame
 pd.set_option('display.max_rows', DISPLAY_MAX_ROWS)
 
 # plot style
 plt.style.use('ggplot')
+colors = ["#000000", "#990610", "#050c96", "#791082", "#755a09", "#0f7544"]
+sns.set_palette(sns.color_palette("hls", 12))
+sns.set_style("ticks", {"xtick.major.size": 25, "ytick.major.size": 25})
+sns.set_context("paper", rc={"font.size": 25, "axes.titlesize": 35,
+                             "axes.labelsize": 30, "legend.fontsize": 30})
 
 
 # %% Define functions used
@@ -46,30 +51,34 @@ def pca_scatter(pca, standardised_values, classifs, set, phases):
     foo = pca.transform(standardised_values)
     bar = pd.DataFrame(zip(foo[:, 0], foo[:, 1], classifs, phases),
                        columns=["PC1", "PC2", "Group", "Phase"])
-    lm = sns.lmplot(x="PC1", y="PC2", data=bar, col="Phase", hue="Group", palette="Dark2",
-                    fit_reg=False, col_order=["Acute", "Convalescent", "Chronic"], )
+    lm = sns.lmplot(x="PC1", y="PC2", data=bar, col="Phase", hue="Group",
+                    fit_reg=False, col_order=["Acute", "Mid Convalescent", "Late Convalescent"], )
     lm.set_titles(col_template="{col_name}"+" Phase")
     lm.fig.suptitle("PCA of "+set)
     lm.fig.subplots_adjust(top=0.9)
     plt.gca()
-    #axes.legend(loc="upper right", title="Group")
+    # axes.legend(loc="upper right", title="Group")
     # axes.set_title(set)
 
 # lineplot for IgX levels
 
 
 def antiline(data, antibody, set):
-    fig, axes = plt.subplots(2, figsize=(
+    fig, axes = plt.subplots(figsize=(
         10, 7))
     fig.tight_layout(pad=3)
-    sns.lineplot(data=data, x="Day", y=antibody, units="PatientID",
-                 hue="Progress", palette="Dark2", estimator=None, lw=1, ax=axes[0])
-    sns.boxplot(y=antibody, x="Phase", data=data, palette="Dark2",
-                hue="Progress", ax=axes[1], order=["Acute", "Convalescent", "Chronic"])
-    #axes = plt.gca()
-    axes[1].legend(loc="upper right", title="Group", fontsize=20)
-    axes[0].set_title(set+" "+antibody)
-    axes[1].set_title(set+" "+antibody)
+    data[antibody] = data[antibody].astype(float)
+    # , order=["Days 1-10","Days 11-30", "Days 31-60", "Days 61-90", "Days over 90"])
+    sns.stripplot(data=data, x="Phase", y=antibody,
+                  hue="Progress", dodge=False, zorder=1, ax=axes, jitter=0.1, size=6)
+    sns.lineplot(data=data, y=antibody, x="Phase", hue="Progress", ax=axes, ci=None)
+    # axes = plt.gca()
+    axes.set_ylim(-0.5, 4)
+    axes.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0., title="Disease Severity")
+    axes.set_title(set+" "+antibody)
+    axes.set_xticklabels(axes.get_xticklabels(), fontsize=25)
+    axes.set_yticks(axes.get_yticks())
+    axes.set_yticklabels(axes.get_yticklabels(), fontsize=25)
 
 # Build a dataframe out of matching rows from dataattributes for each row data
 
@@ -80,23 +89,110 @@ def append_attributes(givendata, dataattributes):
         columns=["Sample", "Dataset", "Day", "Progress", "PatientID", "Phase"])
 
     for ind in givendata.index:
-        currentattribute = dataattributes[dataattributes.Sample == givendata.Sample[ind]]
+        currentattribute = dataattributes.loc[dataattributes.Sample.astype(
+            str) == str(givendata.Sample[ind])]
         phase = ""
 
-        if (currentattribute["Day"].item() <= 10):
-            phase = pd.Series(["Acute"], name="Phase")
-        elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 90):
-            phase = pd.Series(["Convalescent"], name="Phase")
-        elif (currentattribute["Day"].item() >= 90):
-            phase = pd.Series(["Chronic"], name="Phase")
+        if not dataattributes.loc[dataattributes.Sample.astype(
+                str) == str(givendata.Sample[ind])].empty:
+            if (currentattribute["Day"].item() <= 14):
+                phase = pd.Series(["Acute"], name="Phase")
+            elif (currentattribute["Day"].item() >= 15 and currentattribute["Day"].item() < 41):
+                phase = pd.Series(["Mid Convalescent"], name="Phase")
+            elif (currentattribute["Day"].item() >= 41):
+                phase = pd.Series(["Late Convalescent"], name="Phase")
 
-        currentattribute.reset_index(drop=True, inplace=True)
-        currentattribute = pd.concat([currentattribute, phase], axis=1)
+            currentattribute.reset_index(drop=True, inplace=True)
+            currentattribute = pd.concat([currentattribute, phase], axis=1)
 
-        if dataattributes[dataattributes.Sample == givendata.Sample[ind]].empty:
+        if dataattributes.loc[dataattributes.Sample.astype(
+                str) == str(givendata.Sample[ind])].empty:
             print(givendata.Sample[ind])
             add_data = pd.concat([add_data, pd.DataFrame(
                 [[np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
+        else:
+            add_data = add_data.append(currentattribute, ignore_index=True)
+
+    return(add_data)
+
+# Build a dataframe out of matching rows from dataattributes for each row data
+
+
+def append_attributes_new_categories(givendata, dataattributes, additionalattributes):
+    # Create empty dataframe to append
+    add_data = pd.DataFrame(
+        columns=["Sample", "Dataset", "Day", "Progress", "PatientID", "Phase"])
+
+    for ind in givendata.index:
+        currentattribute = dataattributes.loc[dataattributes.Sample.astype(
+            str) == str(givendata.Sample[ind])]
+        covumattribute = additionalattributes.loc[additionalattributes.PatientID.astype(
+            str) == str(currentattribute.PatientID)]
+        print(currentattribute)
+        print(covumattribute)
+        currentattribute["Progress"] = covumattribute["Progress"]
+        print(currentattribute)
+        print()
+        phase = ""
+
+        if not dataattributes.loc[dataattributes.Sample.astype(
+                str) == str(givendata.Sample[ind])].empty:
+            if (currentattribute["Day"].item() <= 14):
+                phase = pd.Series(["Acute"], name="Phase")
+            elif (currentattribute["Day"].item() >= 15 and currentattribute["Day"].item() < 41):
+                phase = pd.Series(["Mid Convalescent"], name="Phase")
+            elif (currentattribute["Day"].item() >= 41):
+                phase = pd.Series(["Late Convalescent"], name="Phase")
+
+            currentattribute.reset_index(drop=True, inplace=True)
+            currentattribute = pd.concat([currentattribute, phase], axis=1)
+
+        if dataattributes.loc[dataattributes.Sample.astype(
+                str) == str(givendata.Sample[ind])].empty:
+            print(givendata.Sample[ind])
+            add_data = pd.concat([add_data, pd.DataFrame(
+                [[np.NaN, np.NaN, np.NaN, np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
+        else:
+            add_data = add_data.append(currentattribute, ignore_index=True)
+
+    return(add_data)
+
+
+def append_attributestoantibody(givendata, dataattributes):
+    # Create empty dataframe to append
+    add_data = pd.DataFrame(
+        columns=["Sample", "Phase", "Progress"])
+
+    for ind in givendata.index:
+        currentattribute = givendata.loc[[ind]]
+        currentpatient = dataattributes.loc[dataattributes.PatientID.astype(
+            str) == str(currentattribute.PatientID.item())]
+
+        phase = ""
+        if (currentattribute["Day"].item() <= 10):
+            phase = pd.Series(["Days 1-10"], name="Phase")
+        elif (currentattribute["Day"].item() >= 11 and currentattribute["Day"].item() < 31):
+            phase = pd.Series(["Days 11-30"], name="Phase")
+        elif (currentattribute["Day"].item() >= 31 and currentattribute["Day"].item() < 61):
+            phase = pd.Series(["Days 31-60"], name="Phase")
+        elif (currentattribute["Day"].item() >= 61 and currentattribute["Day"].item() < 91):
+            phase = pd.Series(["Days 61-90"], name="Phase")
+        elif (currentattribute["Day"].item() >= 91):
+            phase = pd.Series(["Days over 90"], name="Phase")
+
+        progress = ""
+        if not currentpatient.empty:
+            progress = pd.Series(currentpatient["Progress"].unique(), name="Progress")
+        else:
+            progress = pd.Series(["unspecified"], name="Progress")
+
+        currentattribute.reset_index(drop=True, inplace=True)
+        currentattribute = pd.concat([currentattribute.Sample, phase, progress], axis=1)
+
+        if givendata.loc[[ind]].empty:
+            print(givendata.Sample[ind])
+            add_data = pd.concat([add_data, pd.DataFrame(
+                [[np.NaN, np.NaN, np.NaN]], columns=add_data.columns)], ignore_index=True)
         else:
             add_data = add_data.append(currentattribute, ignore_index=True)
 
@@ -160,7 +256,7 @@ def append_highantibodiesIgA(givendata, dataattributes, highiga):
         currentattribute.reset_index(drop=True, inplace=True)
 
         highiga.study_ID = highiga.study_ID.astype(str)
-        #highigm.study_ID = highigm.study_ID.astype(str)
+        # highigm.study_ID = highigm.study_ID.astype(str)
 
         if (currentattribute["PatientID"].item() in highiga.values):
             currentattribute["Progress"] = "Chronic_High_IgA"
@@ -347,6 +443,20 @@ def correlate_pc_loadings(indix, proteinarray, pca_values, protnumbers, filename
     return(chosen_corr)
 
 
+def correlate_pc_loadings_complete(indix, proteinarray, pca_values, protnumbers, filename):
+    correlation_array = np.vstack((proteinarray, pca_values.components_[indix])).T
+    correlation_dataframe = pd.DataFrame(
+        data=correlation_array, index=protnumbers, columns=["Protein", "Loadings"])
+    correlation_dataframe["Loadings"] = correlation_dataframe["Loadings"].astype(
+        float)
+    mask = correlation_dataframe["Loadings"].gt(0)
+    correlation_dataframe = pd.concat([correlation_dataframe[mask].sort_values("Loadings", ascending=False),
+                                       correlation_dataframe[~mask].sort_values("Loadings", ascending=False)], ignore_index=True)
+    correlation_dataframe.to_csv(filename, mode='a', header=True)
+
+    return(correlation_dataframe)
+
+
 def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset, chosengroups):
     blackpal = ["black", "black", "black", "black", "black", "black", "black", "black"]
     fig, axes = plt.subplots(len(current_pc), figsize=(
@@ -355,18 +465,100 @@ def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset, chosengr
     # start plotting per protein
     for j in range(0, len(current_pc)):
         sns.boxplot(y=current_pc[j], x="Phase",
-                    data=data_of_oneset, palette="Dark2", hue=chosengroups, ax=axes[j], order=["Acute", "Convalescent", "Chronic"])
+                    data=data_of_oneset, palette="Dark2", hue=chosengroups, ax=axes[j], order=["Acute", "Mid Convalescent", "Late Convalescent"])
         sns.stripplot(y=current_pc[j], x="Phase",
-                      data=data_of_oneset, hue=chosengroups, palette=blackpal, ax=axes[j], order=["Acute", "Convalescent", "Chronic"], dodge=True)
+                      data=data_of_oneset, hue=chosengroups, palette=blackpal, ax=axes[j], order=["Acute", "Mid Convalescent", "Late Convalescent"], dodge=True)
         axes[j].legend(loc="upper right", title=chosengroups)
         axes[j].set_xlabel("Phase")
         axes[j].set_ylabel("Normalized Protein Amount")
         axes[j].set_title("For PC"+str(indix+1)+": "+current_pc[j] +
                           " amounts in "+chosenset+" samples")
+        axes[j].legend(loc="right",
+                       bbox_to_anchor=(0, 0.5), title="Progress")
+
+
+def plot_cytokines(data, proteins, attributes):
+    phases = data.Phase.unique()
+    fig, axes = plt.subplots(len(phases), figsize=(30, 8*len(phases)))
+    fig.tight_layout(pad=7)
+    # calculate fold changes
+    for ind in range(0, len(phases)):
+        data_onephase = data.loc[data.Phase == phases[ind]]
+        data_onephase = data_onephase.dropna(axis=1)
+        data_mild = data_onephase.loc[data_onephase.Progress == "Mild"]
+        data_severe = data_onephase.loc[data_onephase.Progress == "Severe"]
+        data_mild_mean = data_mild.mean(axis=0)
+        data_severe_mean = data_severe.mean(axis=0)
+        data_foldchange = data_severe_mean/data_mild_mean
+
+        cytokines = data_foldchange.index.tolist()
+        values = data_foldchange.tolist()
+        data_foldchange_frame = pd.DataFrame(
+            list(zip(cytokines, values)), columns=["Cytokine", "Value"])
+        data_foldchange_frame = data_foldchange_frame[data_foldchange_frame.Cytokine.isin(proteins)]
+
+        function = []
+        for indx in data_foldchange_frame.index:
+            currentattribute = data_foldchange_frame.loc[[indx]]
+            currentfunction = attributes.loc[attributes.Cytokine.astype(
+                str) == str(currentattribute.Cytokine.item())]
+            currentfunction = str(currentfunction.BroadFunction.item())
+            function = function + [currentfunction]
+
+        data_foldchange_frame["Function"] = function
+
+        axes[ind] = sns.barplot(data=data_foldchange_frame, x="Cytokine", y="Value", hue="Function", order=data_foldchange_frame.sort_values(
+            "Value", ascending=False).Cytokine, ax=axes[ind], dodge=False)
+        # axes[ind].set_yticks(axes[ind].get_yticks())
+        axes[ind].axhline(1, color="black", lw=5)
+        # axes[ind].set_xticklabels(axes[ind].get_xticklabels(),rotation = 45, horizontalalignment = "right", fontsize = 25)
+        # axes[ind].set_yticklabels(axes[ind].get_yticklabels(), fontsize=25)
+        axes[ind].set_title(
+            "Fold change of cytokine levels between the severe and mild disease in the "+phases[ind]+" phase")
+        axes[ind].legend_.remove()
+
+    handles, labels = axes[ind].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center",
+               bbox_to_anchor=(0.5, -0.32), title="Cytokine Function")
+
+
+def plot_loadings(data, proteins, attributes):
+    fig, axes = plt.subplots(1, figsize=(30, 10))
+    fig.tight_layout(pad=7)
+
+    cytokines = data.Protein.tolist()
+    values = data.Loadings.tolist()
+    data_frame = pd.DataFrame(
+        list(zip(cytokines, values)), columns=["Cytokine", "Value"])
+    data_frame = data_frame[data_frame.Cytokine.isin(proteins)]
+
+    function = []
+    for indx in data_frame.index:
+        currentattribute = data_frame.loc[[indx]]
+        currentfunction = attributes.loc[attributes.Cytokine.astype(
+            str) == str(currentattribute.Cytokine.item())]
+        currentfunction = str(currentfunction.BroadFunction.item())
+        function = function + [currentfunction]
+
+    data_frame["Function"] = function
+
+    axes = sns.barplot(data=data_frame, x="Cytokine", y="Value", hue="Function", order=data_frame.sort_values(
+        "Value", ascending=False).Cytokine, ax=axes, dodge=False)
+    # axes[ind].set_yticks(axes[ind].get_yticks())
+    axes.axhline(0.2, color="black", lw=5)
+    axes.axhline(-0.2, color="black", lw=5)
+    axes.set_xticklabels(axes.get_xticklabels(), rotation=45,
+                         horizontalalignment="right", fontsize=25)
+    # axes[ind].set_yticklabels(axes[ind].get_yticklabels(), fontsize=25)
+    axes.set_title("PCA loadings of cytokines")
+    axes.legend_.remove()
+
+    handles, labels = axes.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center",
+               bbox_to_anchor=(0.5, -0.7), title="Cytokine Function")
 
 
 # %% PRELIMINARY STEPS
-
 # Olink data has been edited as follows:
 # NPX normalized data (per chemical) is used in this analysis
 # Control Data has been duplicated for each dataset with different sampleID
@@ -375,18 +567,15 @@ def plot_highvar_proteins(current_pc, indix, data_of_oneset, chosenset, chosengr
 # Samples that didn't pass Olink's quality test (red numbers) and Olink's
 # quality test samples have been deleted
 # Remaining rows and columns only used for description have been deleted
-
 # A file containing SampleID, Dataset, Day (on which sample has been taken),
 # Progress (of disease), and PatientID has been created manually
-
-
 # %% LOAD DATA
 data = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit.csv")
 attributes = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/olink_sample_names.csv")
 antibodies = pd.read_csv(
-    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/IgGIgAIgMELISAresults22012021_edit.csv")
+    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/IgGIgAIgMELISAresults22012021_edit.csv", na_values=['NA'])
 
 highIGA = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/highIgA_olink.csv")
@@ -399,6 +588,15 @@ sexage = pd.read_csv(
 
 stomachache_list = pd.read_csv(
     "C:/umea_immunology/experiments/corona/olink_data/formatted_data/olink_stomach_ache.csv")
+
+cytokine_functions = pd.read_csv(
+    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/broad_cytokine_functions_edit.csv")
+
+covum_attributes = pd.read_csv(
+    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/covum_additional_data.csv")
+
+covum_attributes.columns = covum_attributes.columns.str.strip()  # get rid of whitespace in columns
+cytokine_functions.columns = cytokine_functions.columns.str.strip()  # get rid of whitespace in columns
 
 # save data columns (without Sample) for the plotting Chronicr
 proteins = data.drop("Sample", axis=1).columns.str.strip()
@@ -420,6 +618,30 @@ additionaldata = additionaldata.reset_index(drop=True)
 
 data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
                  axis=1)
+
+# %% Append sample attributes to the right sample ID with new disease progress COVUM (find efficient solution)
+
+additionaldata = append_attributes_new_categories(data, attributes, covum_attributes)
+
+# Append additionaldata to data, in order to add attributes to the corresponding samples
+print("TAIL:\n", additionaldata.tail())
+print(additionaldata["Phase"].unique())
+additionaldata = additionaldata.reset_index(drop=True)
+
+data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
+                 axis=1)
+
+# %% Append sample attributes to the right sample ID IN THE ANTIBODY DATA and group the days in phases  (find efficient solution)
+
+additionaldata = append_attributestoantibody(antibodies, covum_attributes)
+
+# Append additionaldata to data, in order to add attributes to the corresponding samples
+print("TAIL:\n", additionaldata.tail())
+print(additionaldata["Phase"].unique())
+additionaldata = additionaldata.reset_index(drop=True)
+
+antibodies = pd.concat([antibodies, additionaldata.drop("Sample", axis=1)],
+                       axis=1)
 
 # %% Append sex and age info to the right patient ID  (find efficient solution) after attributes
 
@@ -481,6 +703,8 @@ data = pd.concat([data, additionaldata.drop("Sample", axis=1)],
 # %% Save complete data to new csv file
 
 data.to_csv("C:/umea_immunology/experiments/corona/olink_data/formatted_data/20201969_Forsell_NPX_edit_complete.csv")
+antibodies.to_csv(
+    "C:/umea_immunology/experiments/corona/olink_data/formatted_data/Forsell_covum_antibody_complete.csv")
 
 data = data.drop("Sample", axis=1)
 data.columns = data.columns.str.strip()  # get rid of whitespace in first column
@@ -503,26 +727,48 @@ for oneset in datasets_unique:
 
 plotpages.close()
 
-# %% Plot antibody levels
+# %% Plot fold change of cytokines during different times
 
-datasets_unique = data["Dataset"].unique()
+oneset = "COVID"
+
+plotpages = PdfPages(
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/olink_cytokine_foldchanges.pdf")
+
+data_oneset = data[data["Dataset"] == oneset]
+
+fig1 = plot_cytokines(data_oneset, proteins, cytokine_functions)
+plotpages.savefig(fig1, bbox_inches='tight')
+plotpages.close()
+
+# %% Plot antibody levels (ONLY ANTIBODIES)
+
+# datasets_unique = data["Dataset"].unique()
 antibodylist = ["IgA", "IgM", "IgG"]
 
 # setup pdf for saving plots
 plotpages = PdfPages(
-    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/preliminary_olink_data_antibody_levels.pdf")
+    "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/covum_data_antibody_levels.pdf")
 
 # do analysis by dataset
-for oneset in datasets_unique:
-    data_oneset = data[data["Dataset"] == oneset]
+# for oneset in datasets_unique:
+#    data_oneset = data[data["Dataset"] == oneset]
+oneset = "COVID"
 
-    for onebody in antibodylist:
-        data_onebody = data_oneset[["PatientID", "Day", "Progress", "Phase", onebody]]
-        data_onebody = data_onebody.dropna(axis=0)
-        if (not data_onebody[onebody].empty):
-            fig2 = antiline(data_onebody, onebody, oneset)
-            # save plot
-            plotpages.savefig(fig2)
+for onebody in antibodylist:
+    data_onebody = antibodies[["PatientID", "Day", "Progress", "Phase", onebody]]
+    # leave out data points that have no disease severity
+    data_onebody = data_onebody.loc[data_onebody.Progress.astype(str) != "unspecified"]
+    data_onebody["Phase"] = pd.Categorical(data_onebody["Phase"],
+                                           categories=["Days 1-10", "Days 11-30",
+                                                       "Days 31-60", "Days 61-90", "Days over 90"],
+                                           ordered=True)
+    data_onebody = data_onebody.dropna(axis=0)
+
+    if (not data_onebody[onebody].empty):
+        # print(data_onebody.head())
+        fig2 = antiline(data_onebody, onebody, oneset)
+        # save plot
+        plotpages.savefig(fig2, bbox_inches='tight')
 
 plotpages.close()
 
@@ -578,6 +824,16 @@ for oneset in datasets_unique:
     protindices = np.arange(len(pcaproteinlist))
     pcaproteinarray = np.array(pcaproteinlist)
 
+    filename = "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/20201969_Forsell_NPX_edit_PCA_loadings.csv"
+    loading_frame = correlate_pc_loadings_complete(0, pcaproteinarray, pca, protindices, filename)
+
+    plotpages = PdfPages(
+        "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/olink_cytokine_PCA_loadings.pdf")
+
+    fig1 = plot_loadings(loading_frame, proteins, cytokine_functions)
+    plotpages.savefig(fig1, bbox_inches='tight')
+
+    # choose highest variance cytokines
     filename = "C:/umea_immunology/experiments/corona/olink_data/olinkanalysis/20201969_Forsell_NPX_edit_PCA_loadings.csv"
     corr_pc1 = correlate_pc_loadings(0, pcaproteinarray, pca, protindices, filename)
     corr_pc2 = correlate_pc_loadings(1, pcaproteinarray, pca, protindices, filename)
